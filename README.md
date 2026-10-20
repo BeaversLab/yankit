@@ -27,3 +27,16 @@ reasons that must stay indistinguishable, and keep the precise reason in the
 audit log.
 
 yankit must stay tiny: only code both services genuinely share (ADR 0001).
+
+## Divergences from YanAuth's current rendering (reconcile on adoption)
+
+yankit is ported from YanAuth's `internal/httpapi` but fixes four behaviors.
+YanAuth picks these up when it switches to yankit (implementation phase 0):
+
+- **HEAD requests** get no body on every error path, not just `echo.HTTPError`.
+- **Echo v5 router sentinels** (404/405 are unexported `HTTPStatusCoder`
+  implementors, not `*echo.HTTPError`) render with their real status; YanAuth
+  today would collapse them to 500.
+- **405 maps to `method_not_allowed`** instead of the `"error"` fallback.
+- **5xx messages are scrubbed** to the HTTP status text — handler-supplied
+  detail goes to the log, never the client.

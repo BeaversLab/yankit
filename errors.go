@@ -93,31 +93,21 @@ func RenderError(c *echo.Context, status int, code, msg string) error {
 }
 
 // ErrorHandler returns uniform JSON error responses: every error body is
-// {"code": <stable snake_case code>, "error": <human message>}. Unknown
-// errors collapse to 500 internal_error — details go to the log, never the
-// client.
+// {"code": <stable snake_case code>, "error": <human message>}. Details of
+// any 5xx go to the log, never the client; unknown errors collapse to 500
+// internal_error.
 func ErrorHandler(log *slog.Logger) echo.HTTPErrorHandler {
 	return func(c *echo.Context, err error) {
 		if resp, _ := echo.UnwrapResponse(c.Response()); resp != nil && resp.Committed {
 			return
 		}
 		if ae, ok := err.(*APIError); ok {
-			if ae.status >= 500 {
-				log.Error("http error", "err", err, "path", c.Path())
-			}
-			if werr := RenderError(c, ae.status, ae.code, ae.msg); werr != nil {
-				log.Error("write error response", "err", werr)
-			}
+			renderStatus(log, c, err, ae.status, ae.code, ae.msg)
 			return
 		}
 		var he *echo.HTTPError
 		if errors.As(err, &he) {
-			if he.Code >= 500 {
-				log.Error("http error", "err", err, "path", c.Path())
-			}
-			if werr := RenderError(c, he.Code, DefaultCodeForStatus(he.Code), he.Message); werr != nil {
-				log.Error("write error response", "err", werr)
-			}
+			renderStatus(log, c, err, he.Code, DefaultCodeForStatus(he.Code), he.Message)
 			return
 		}
 		// Echo v5's router-level errors (404, 405, ...) are unexported
@@ -125,17 +115,22 @@ func ErrorHandler(log *slog.Logger) echo.HTTPErrorHandler {
 		// *echo.HTTPError. Honor any such status-carrying error so it
 		// renders with its real status instead of collapsing to 500.
 		if status := echo.StatusCode(err); status != 0 {
-			if status >= 500 {
-				log.Error("http error", "err", err, "path", c.Path())
-			}
-			if werr := RenderError(c, status, DefaultCodeForStatus(status), http.StatusText(status)); werr != nil {
-				log.Error("write error response", "err", werr)
-			}
+			renderStatus(log, c, err, status, DefaultCodeForStatus(status), http.StatusText(status))
 			return
 		}
+		renderStatus(log, c, err, http.StatusInternalServerError, CodeInternalError, http.StatusText(http.StatusInternalServerError))
+	}
+}
+
+// renderStatus logs server-side failures and writes the uniform error body.
+// 5xx messages never reach the client: the real detail goes to the log and
+// the body carries only the HTTP status text.
+func renderStatus(log *slog.Logger, c *echo.Context, err error, status int, code, msg string) {
+	if status >= 500 {
 		log.Error("http error", "err", err, "path", c.Path())
-		if werr := RenderError(c, http.StatusInternalServerError, CodeInternalError, "internal error"); werr != nil {
-			log.Error("write error response", "err", werr)
-		}
+		msg = http.StatusText(status)
+	}
+	if werr := RenderError(c, status, code, msg); werr != nil {
+		log.Error("write error response", "err", werr)
 	}
 }

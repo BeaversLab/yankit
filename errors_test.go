@@ -194,13 +194,35 @@ func TestUnknownError(t *testing.T) {
 	if body["code"] != "internal_error" {
 		t.Fatalf("code = %q, want internal_error", body["code"])
 	}
-	if body["error"] != "internal error" {
-		t.Fatalf("error = %q, want %q", body["error"], "internal error")
+	if body["error"] != "Internal Server Error" {
+		t.Fatalf("error = %q, want %q", body["error"], "Internal Server Error")
 	}
 	if bytes.Contains([]byte(raw), []byte("hunter2")) {
 		t.Fatal("internal error details leaked into response body")
 	}
 	if !bytes.Contains(logBuf.Bytes(), []byte("hunter2")) {
 		t.Fatal("internal error details missing from server log")
+	}
+}
+
+// TestHTTPError5xxMessageScrubbed verifies that a 5xx echo.HTTPError's
+// handler-supplied message never reaches the client — only the log.
+func TestHTTPError5xxMessageScrubbed(t *testing.T) {
+	e, logBuf := newEcho()
+	e.GET("/x", func(c *echo.Context) error {
+		return echo.NewHTTPError(http.StatusInternalServerError, "secret: db password is hunter2")
+	})
+	status, body, raw := do(t, e, http.MethodGet, "/x")
+	if status != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", status)
+	}
+	if bytes.Contains([]byte(raw), []byte("hunter2")) {
+		t.Fatalf("5xx message leaked into body: %s", raw)
+	}
+	if body["error"] != "Internal Server Error" {
+		t.Fatalf("error = %q, want status text", body["error"])
+	}
+	if !bytes.Contains(logBuf.Bytes(), []byte("hunter2")) {
+		t.Fatal("5xx detail missing from server log")
 	}
 }
