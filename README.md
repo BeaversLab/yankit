@@ -1,11 +1,16 @@
 # yankit
 
-Shared HTTP toolkit for the Yan services (YanAuth, YanLearn). Echo v5, Go 1.25+,
-no dependencies beyond Echo and the standard library.
+Shared HTTP toolkit for the Yan services (YanAuth, YanLearn). Echo v5, Go 1.25+.
+Dependencies: Echo v5, lestrrat-go/jwx/v3 (JWT/JWKS), standard library.
 
 - **Error rendering** — uniform `{"code","error"}` JSON bodies with stable
   snake_case add-only codes; HTTP status carries the semantics. Unknown errors
   collapse to `500 internal_error` and never leak details to the client.
+- **Auth chain** — consumer-side middlewares: `JWTAuth` (local JWKS signature
+  verification, no network call), `RequireScope` (preview tokens refused on
+  management routes), `RequirePerm` (namespaced permission codes, 403 carries
+  the missing code). Composable independently, or via `NewAuth(Options{Keys,
+  Namespace})`.
 - **Startup scaffold** — `New(logger)` returns an Echo instance wired with the
   shared error handler and one structured slog line per request;
   `Healthz(ping)` mounts a liveness probe.
@@ -14,9 +19,15 @@ no dependencies beyond Echo and the standard library.
 log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 e := yankit.New(log)
 e.GET("/healthz", yankit.Healthz(dbPing))
-e.GET("/courses/:id", func(c *echo.Context) error {
-    return yankit.NewAPIError(http.StatusNotFound, "course_not_found", "course not found")
+
+// 启动时拉取 YanAuth /.well-known/jwks.json 并缓存（来源注入，验签零网络调用）
+set, _ := yankit.ParseJWKS(jwksBody)
+auth := yankit.NewAuth(yankit.Options{
+    Keys:      yankit.KeySetFunc(func() (jwk.Set, error) { return set, nil }),
+    Namespace: "learn",
 })
+api := e.Group("/api/v1", auth.JWT(), auth.Scope(yankit.ScopeNormal))
+api.GET("/courses/:id", showCourse, auth.Perm("course:read"))
 ```
 
 Minimal runnable example: `go run ./examples/minimal`.

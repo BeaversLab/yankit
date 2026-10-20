@@ -34,6 +34,11 @@ const (
 	CodeRateLimited         = "rate_limited"
 	CodeDatabaseUnavailable = "database_unavailable"
 	CodeInternalError       = "internal_error"
+
+	// 鉴权链错误码，与 YanAuth 现行契约一致（add-only）。
+	CodeInvalidToken      = "invalid_token"
+	CodeScopeNotAllowed   = "scope_not_allowed"
+	CodeMissingPermission = "missing_permission"
 )
 
 // DefaultCodeForStatus gives every response a code even where no specific
