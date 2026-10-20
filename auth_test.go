@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -255,6 +256,47 @@ func TestMiddlewareChain(t *testing.T) {
 			t.Fatalf("body = %s", raw)
 		}
 	})
+}
+
+// TestMiddlewareStandalone 验证 Scope/Perm 不挂 JWTAuth 独立使用时，
+// 对无 claims 请求收敛为 403 而非 panic（YanAuth 同场景会 panic）。
+func TestMiddlewareStandalone(t *testing.T) {
+	t.Run("scope without jwt", func(t *testing.T) {
+		e, _ := newEcho()
+		e.GET("/x", func(c *echo.Context) error { return nil }, yankit.RequireScope(yankit.ScopeNormal))
+		status, _, raw := do(t, e, "GET", "/x")
+		if status != 403 {
+			t.Fatalf("status = %d, want 403 (body=%s)", status, raw)
+		}
+		assertCode(t, raw, "scope_not_allowed")
+	})
+	t.Run("perm without jwt", func(t *testing.T) {
+		e, _ := newEcho()
+		e.GET("/x", func(c *echo.Context) error { return nil }, yankit.RequirePerm("learn:course:create"))
+		status, _, raw := do(t, e, "GET", "/x")
+		if status != 403 {
+			t.Fatalf("status = %d, want 403 (body=%s)", status, raw)
+		}
+		assertCode(t, raw, "missing_permission")
+	})
+}
+
+// TestJWTAuthKeySetError 验证公钥来源故障收敛为 500 internal_error 且不泄露细节。
+func TestJWTAuthKeySetError(t *testing.T) {
+	e, _ := newEcho()
+	failing := yankit.KeySetFunc(func() (jwk.Set, error) { return nil, errors.New("cache exploded") })
+	e.GET("/x", func(c *echo.Context) error { return nil }, yankit.JWTAuth(failing))
+	req := httptest.NewRequest("GET", "/x", nil)
+	req.Header.Set("Authorization", "Bearer whatever")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != 500 {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	assertCode(t, rec.Body.String(), "internal_error")
+	if bytes.Contains(rec.Body.Bytes(), []byte("cache exploded")) {
+		t.Fatalf("key source error leaked: %s", rec.Body.String())
+	}
 }
 
 // TestAuthGroupNamespace 验证 Options 注入：公钥来源 + 权限命名空间前缀。

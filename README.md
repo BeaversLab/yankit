@@ -51,3 +51,7 @@ YanAuth picks these up when it switches to yankit (implementation phase 0):
 - **405 maps to `method_not_allowed`** instead of the `"error"` fallback.
 - **5xx messages are scrubbed** to the HTTP status text — handler-supplied
   detail goes to the log, never the client.
+- **Auth middlewares converge instead of panicking**: used standalone
+  (without `JWTAuth` in front), `RequireScope`/`RequirePerm` answer 403 for
+  claims-less requests, where YanAuth's current code panics on the type
+  assertion.
