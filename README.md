@@ -55,3 +55,7 @@ YanAuth picks these up when it switches to yankit (implementation phase 0):
   (without `JWTAuth` in front), `RequireScope`/`RequirePerm` answer 403 for
   claims-less requests, where YanAuth's current code panics on the type
   assertion.
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE).
